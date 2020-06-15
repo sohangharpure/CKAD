@@ -1,0 +1,116 @@
+------------
+Architecture
+------------
+
+Node - either a physical machine or a VM
+Cluster - set of nodes
+
+Master - Slave architecture
+Master watches over worker nodes
+
+Components
+----------
+API-server: Front-end for kubernetes, interaction point. Determines which one is master.
+etcd: key-value store, distributed and reliable - stores all information regarding nodes/masters
+kubelet: Agent on each nodes. Makes sure containers are running on each node. Interacts with master
+Container runtime: Underlying software for running containers(dockers)
+Controller: Brain behind the orchestration. Make scaling decisions
+Scheduler: Distributing work
+
+Master Node         Worker node(minion)
+-----------         -------------------
+kube-api-server     Container runtime
+etcd                Kubelet
+Controller
+Scheduler
+
+
+------------
+POD's
+------------
+
+Smallest unit of deployment: POD
+Can possibly have multiple containers per pod (helper containers). The other pod cannot be of the same type
+    - Two containers can connect with each other using localhost
+To scale up - create new pods. not add multiple containers within the same pod.
+
+Scaling up and linking with docker ->
+docker run helper -link app1 |  For this, we need to setup networking, shareable volumes etc. which can be automatically
+docker run helper -link app2 |  managed by kubernetes
+
+------
+YAML's
+------
+
+4 mandatory fields in each kubernetes configuration file:
+
+apiVersion - v1 for pod and service, apps/v1 for ReplicaSet, Deployment etc.
+kind  - Type of object we are trying to create(Pod, Service etc.)
+metadata - Data about the object. Dictionary. We can only specify kubernetes specific properties (name, labels etc)
+           If you do want to specify custom properties, we can specify them under labels
+spec - Provide info regarding the object we are trying to create(pod, deployment)
+       Is a Dictionary
+       
+
+------------------------------------------------
+Kubernetes Controllers
+------------------------------------------------
+Replication Controller -> High Availability, Share load across multiple pods
+
+Like to have more than 1 instance(pod) of our application.
+Even if you have a single pod, if existing one fails, it will bring up new one
+Load balancing
+
+Replication Controller      | ReplicaSet
+-------------------------------------------------
+Older tech                  | New recommended way
+apiVersion: v1              | apiVersion: apps/v1   ->If wrong, you will get an error saying "no match for kind ReplicaSet"
+kind: ReplicationController | kind: ReplicaSet
+spec:                       | spec:
+    - template:             |   - template:      
+         {POD template}     |       {POD template}
+    - replicas: 2           |   - replicas: 2
+                            |   - selector:                 -> This is because ReplicaSet's can also manage pods which are not created by itself
+                            |        matchLabels:              This field is mandatory and cannot be skipped
+                            |           type: frontEnd      
+
+Labels and Selectors:
+ReplicaSet: Monitor all pods, if failed, bring up new ones
+How does it know what pods to monitor ? Labeling our pods!
+
+----------
+Deployment
+----------
+The definition is exactly the same as a ReplicaSet except with the deployment keyword
+Also there are different types such as rolling deployment, or completely stopping existing instances and then bringing up new ones etc.
+While deploying, it creates a new ReplicaSet and then after the upgrade it deletes existing deployments
+
+----------
+Namespaces
+----------
+Used for isolation within an environment
+Default namespace - automatically created by Kubernetes when cluster startup.
+kube-system - all objects internal to kubernets are stored here so that user might not touch them accidently.
+kube-public - resources which need to be made public to all users
+Can assign quotas and limits etc to each namespace. As well as who can access what(policies)
+
+Can connect to another service within another namespace via it's fully qualified name. e.g:
+
+db-service.dev.svc.cluster.local 
+where:
+cluster.local - domain name 
+svc - subdomain for the service
+dev - cluster name
+db-service - name of the service
+
+--------------
+Resource Quota
+--------------
+To limit resources in a namespace, create a resource quota
+kind = ResourceQuota
+metadata:
+    name: compute-quota
+    namespace: dev
+spec: 
+    hard:
+        pods: "10"

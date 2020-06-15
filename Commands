@@ -1,0 +1,169 @@
+----------------------------------------
+Certification Tips(quick/handy commands)
+----------------------------------------
+
+--dry-run: By default as soon as the command is run, the resource will be created. 
+--dry-run=client option. simply want to test your command ,
+This will not create the resource, instead, tell you weather the resource can be created and if your command is right.
+
+-o yaml: This will output the resource definition in YAML format on screen.
+
+POD
+---
+Create an NGINX Pod
+kubectl run nginx --image=nginx
+
+Generate POD Manifest YAML file (-o yaml). Don't create it(--dry-run)
+kubectl run nginx --image=nginx --dry-run=client -o yaml
+
+Deployment
+----------
+Create a deployment
+kubectl create deployment --image=nginx nginx
+
+Generate Deployment YAML file (-o yaml). Don't create it(--dry-run)
+kubectl create deployment --image=nginx nginx --dry-run -o yaml
+
+Generate Deployment with 4 Replicas
+kubectl create deployment nginx --image=nginx
+
+IMPORTANT:
+kubectl create deployment does not have a --replicas option. You should first create it and then scale it using the kubectl scale command.
+kubectl scale deployment nginx --replicas=4
+
+Save it to a file - (If you need to modify or add some other details)
+kubectl create deployment nginx --image=nginx--dry-run=client -o yaml > nginx-deployment.yaml
+
+Service
+-------
+Create a Service named redis-service of type ClusterIP to expose pod redis on port 6379
+kubectl expose pod redis --port=6379 --name redis-service --dry-run=client -o yaml
+(This will automatically use the pod's labels as selectors)
+
+OR
+
+kubectl create service clusterip redis --tcp=6379:6379 --dry-run=client -o yaml 
+(This will not use the pods labels as selectors, instead it will assume selectors as app=redis. 
+You cannot pass in selectors as an option. So it does not work very well if your pod has a different label set. 
+So generate the file and modify the selectors before creating the service)
+
+Create a Service named nginx of type NodePort to expose pod nginx's port 80 on port 30080 on the nodes:
+
+kubectl expose pod nginx --port=80 --name nginx-service --dry-run=client -o yaml
+(This will automatically use the pod's labels as selectors, but you cannot specify the node port. 
+You have to generate a definition file and then add the node port in manually before creating the service with the pod.)
+
+Or
+
+kubectl create service nodeport nginx --tcp=80:80 --node-port=30080 --dry-run=client -o yaml
+
+(This will not use the pods labels as selectors)
+
+Both the above commands have their own challenges. While one of it cannot accept a selector the other cannot accept a node port. 
+I would recommend going with the `kubectl expose` command. If you need to specify a node port, generate a definition file using 
+the same command and manually input the nodeport before creating the service.
+
+https://kubernetes.io/docs/reference/kubectl/conventions/
+
+-------------------------
+kubectl output formatting
+-------------------------
+
+kubectl [command] [TYPE] [NAME] -o <output_format>
+
+Here are some of the commonly used formats:
+
+-o jsonOutput a JSON formatted API object.
+-o namePrint only the resource name and nothing else.
+-o wideOutput in the plain-text format with any additional information.
+-o yamlOutput a YAML formatted API object.
+
+---------------------------------------------------------------------------------------------------------------------
+
+-----
+POD's
+-----
+kubectl run nginx --image xxx -> Deploys a docker container by creating a pod
+Connects to a docker repository(dockerhub or artifactory)
+
+kubectl get pods
+
+kubetcl create -f pod-definition.yaml
+
+kubectl describe pod myapp-pod
+
+kubectl delete pods --all
+
+A Note on Editing Existing Pods ->
+In any of the practical quizzes if you are asked to edit an existing POD, please note the following:
+If you are given a pod definition file, edit that file and use it to create a new pod.
+If you are not given a pod definition file, you may extract the definition to a file using the below command:
+
+kubectl get pod <pod-name> -o yaml > pod-definition.yaml
+
+Then edit the file to make the necessary changes, delete and re-create the pod.
+
+Use the kubectl edit pod <pod-name> command to edit pod properties.
+
+-------------
+Replica Sets
+-------------
+kubectl create -f replicaset-definition.yml
+
+kubectl get replicaset
+
+kubectl describe replicaset {replicaset-name}
+
+kubectl delete replicaset myapp-replicaset
+
+How to update ReplicaSet?
+
+1)kubectl replace -f replicaset-definition.yml
+2)kubectl scale --replicas=6 -f replicaset-definition.yml -> This won't update the original file
+3)kubectl scale --replicas=6 replicaset myapp-replicaset
+
+-----------
+Deployments
+-----------
+kubectl create -f deployment-definition.yml
+
+kubectl get Deployments
+
+kubectl get replicaset
+
+kubectl get pods
+
+kubectl get all
+
+----------
+Namespaces
+----------
+
+kubectl get namespace -> Count no. of namespaces
+
+Create a new namespace:
+kubectl create -f namespace-dev.yml 
+OR
+kubectl create namespace dev
+
+kubectl config set-context $(kubectl config current-context) --namespace=dev -> Permanantly switch to dev namespace for all operations
+
+kubectl get pods -> By default lists the pods in the "default" namespace
+
+kubectl get pods --all-namespaces
+
+kubectl get pods --namespace=kube-system -> Get pods in the kube-system namespace
+
+kubectl create -f deployment-definition.yml --namespace=dev 
+OR:
+metadata:
+    name: xxx
+    namespace: dev -> This will always create the deployment in the "dev" namespace
+
+------------
+Cluster info
+------------
+
+kubectl cluster-info
+
+kubectl get nodes
