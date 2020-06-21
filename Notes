@@ -1,3 +1,5 @@
+https://medium.com/@harioverhere/ckad-certified-kubernetes-application-developer-my-journey-3afb0901014
+
 ------------
 Architecture
 ------------
@@ -114,3 +116,360 @@ metadata:
 spec: 
     hard:
         pods: "10"
+
+
+-----------------------------
+Commands, arguments in docker
+-----------------------------
+docker run ubuntu -> Runs and exits
+Containers only lives as long as process inside is alive
+
+docker run ubuntu [COMMAND] 
+
+FROM ubuntu     -> To make the command change permanant
+CMD sleep 5
+
+CMD ["COMMAND", "param1"] -> 1st param to json should be the command to run
+
+Build custom image -> docker build -t ubuntu-sleeper .
+Run custom image -> docker run ubuntu-sleeper
+
+Make sleep duration custom ->
+docker run ubuntu-sleeper 10
+
+FROM ubuntu
+ENTRYPOINT ["sleep"] -> This will get appended
+
+Difference between sleep and ENTRYPOINT:
+Sleep -> Whatever parameters you specify will replace the existing one
+ENTRYPOINT -> Whatever parameters you specify will get appended
+
+what if we want a default value if argument is not specified?
+ENTRYPOINT ["sleep"]
+CMD ["5"]
+
+docker run ubuntu-sleeper 10 -> sleep 10
+docker run ubuntu-sleeper -> sleep 5
+
+What if we want to specify a custom ENTRYPOINT:
+docker run --entrypoint sleep2.0 ubuntu-sleeper 10
+Command at startup: sleep2.0 10
+
+---------------------------------
+Commands, arguments in Kubernetes
+---------------------------------
+apiVersion: v1
+kind: Pod
+metadata:
+    name: ubuntu-sleeper-pod
+spec:
+    containers:
+        - name: ubuntu-sleeper
+          image: ubuntu-sleeper
+          command: ["sleep2.0"] -> Equivalent to overriding ENTRYPOINT for docker image
+          args: ["10"] -> Equivalent to overriding CMD (arguments) to docker image
+
+
+-----------------------------------
+environment variables in Kubernetes
+-----------------------------------
+apiVersion: v1
+kind: Pod
+metadata:
+    name: ubuntu-sleeper-pod
+spec:
+    containers:
+        - name: ubuntu-sleeper
+          image: ubuntu-sleeper
+          env:
+            - name: APP_COLOR -> Name of the environment variable
+              value: pink     -> Value of the environment variable
+
+----------
+Config Map
+----------
+When there are a lot of environment variables and pod definitions, it becomes difficult to manage
+them. For this, we use config maps
+When you inject a variable from config map into a pod, they become available as environment variables
+
+There are 2 phases to config map:
+1. Define config map
+2. Inject them into pod
+
+Imperative way -> kubectl create configmap
+Declarative -> kubectl create -f ..
+
+-------
+Secrets
+-------
+Store sensitive information
+Similar to config maps, but hash encoded
+
+There are 2 phases to Secrets:
+1. Define secrets
+2. Inject them into pod
+
+Imperative way -> kubectl create secret generic
+Declarative -> kubectl create -f ..
+
+Secrets are not encrypted, so it is not safer in that sense. However, some best practices around using secrets make it safer. As in best practices like:
+
+Not checking-in secret object definition files to source code repositories.
+Enabling Encryption at Rest for Secrets so they are stored encrypted in ETCD.
+
+Also the way kubernetes handles secrets. Such as:
+
+A secret is only sent to a node if a pod on that node requires it.
+Kubelet stores the secret into a tmpfs so that the secret is not written to disk storage.
+Once the Pod that depends on the secret is deleted, kubelet will delete its local copy of the secret data as well.
+
+Having said that, there are other better ways of handling sensitive data like passwords in Kubernetes, such as using tools like Helm Secrets, HashiCorp Vault
+
+----------------
+Security Context
+----------------
+
+------------------------------------------------------------------------------------------------------------------------------
+
+Security in docker:
+Containers are not fully isolated from hosts, they are bound to the host kernel
+Container and host each have a namespace
+All processes in containers are actually run on the host but in their own namespace
+Docker host can only see processes in it's own Namespaces
+When you list processes in docker host, you only see processes running within the conatiner
+However, when you run list processes on the host, you will see all processes but with a different process id
+
+By default docker runs processes as root user
+You can set the --user command in docker run if you don't want to run it as root
+Another way to enforce is in the docker image
+
+FROM ubuntu
+USER 1000
+
+root user within the container is different from root on the host
+root user capabilities -> /usr/include/linux/capability.h
+
+By default, docker provides limited functionaoltiy to the root user.
+
+To add more capabilities, you can use the below command:
+docker run --cap-add MAC_ADMIN ubuntu
+To remove capabilities
+docker run --cap-drop MAC_ADMIN ubuntu
+To run with all capabilities
+docker run --privileges 
+
+------------------------------------------------------------------------------------------------------------------------------
+
+Kubernetes security:
+
+Can be controlled at a container level or a pod level
+If you define security at pod level, it will override security for all containers
+If you define at both pod and container level, container level will override pod level
+
+apiVersion: v1
+kind: Pod
+metadata:
+    name: web-pod
+spec:
+    securityContext:        -> Pod Level
+        runAsUser: 1000
+    containers:
+        - name: ubuntu
+          image: ubuntu
+          securityContext:        -> Container Level
+            runAsUser: 1000
+            capabilities:           -> capabilities can only be added at container level, not POD level
+              add: ["MAC_ADMIN"]
+
+
+---------------------
+Resource Requirements
+---------------------
+
+Kubernetes Scheduler determines which pod shold go on which node
+If the scheduler finds no node has enought resources to host the pod, it will avoid running the pod and the status will be "Pending"
+
+Default resources per pod (resource request) -> When scheduling, looks at these
+.5 CPU, 256 Mi of memory,
+
+In the yaml, under the container, resources can be specified as below:
+resources:
+    requests:
+        memory: "1Gi"
+        cpu: 1
+
+What is 1 count of CPU? 
+0.1 CPU -> 100m 
+1 CPU is Equivalent to 1 VCPU = 1 AWS vCPU, 1 GCP Core, 1 Azure Core, 1 Hyperthread
+
+memory:
+1 GB is 1000 Megabyte
+1 Gi(Gibibyte) = 1024 Mibibyte
+
+In Docker, there is no default limit.
+
+By default, kubernetes defaults 1 vCPU limit, 512 Mi memory
+
+To change limits:
+    requests:
+        memory: "1Gi"
+        cpu: 1
+    limits:
+        memory: "2Gi"
+        cpu: 2
+
+When resources go beyond limit, kubernets throttles CPU. For memory, it it's exceeding the limit for a long time, kubernetes terminates the pod
+
+
+----------------
+Service Accounts
+----------------
+
+Two types of accounts in kubernetes: 
+User -> Used by users/developers
+service -> Used by applications to interact with kubernetes
+    For e.g Jenkins, Prometheus
+
+When a service account is created, it by default generates a token which can be used to authenticate
+It's stored as a secret
+Secret object is linked to a service account
+
+What if the third party application(such as Jenkins) is hosted in the kubernetes cluster itself?
+Whole process of getting the token and configuring it can be done automatically by mounting a volume with the secret
+Don't have to provide it manually
+
+"default" service account -> Each namespace has it's own. 
+Whenver a pod is created, the default service account is mounted as a volume in the pod.
+
+Default service account is restricted
+
+To specify custom service account in a container:
+containers:
+    - name: xx
+      image: xxx
+    serviceAccount: dashboard-sa
+
+If you don't want to mount the default Service account:
+    automountServiceAccountToken: false
+
+----------------------
+Taints and Tolerations
+----------------------
+Nothing to do with security - used to set restrictions on what pods can be scheduled on the nodes by the Scheduler
+For e.g, I want that all pods for a certain application should be placed on Node 1.
+2 Steps:
+a)  Apply a taint to the Node1 with a value. For e.g - Taint=blue
+    By default, there are no tolerations placed on a pod. Hence no pods can be placed on Node1 with that toleration.
+b) Apply toleration on a pod with value blue
+Taints are applied on a node, Tolerations are applied on the pod
+
+taint-effect -> specifies what happens to pod that DO NOT TOLERATE this taint?
+3 values:
+a) NoSchedule : Pods will not be scheduled on the node
+b) PreferNoSchedule: System will try to avoid placing the pod on the node but no guaratee
+c) NoExecute: No new pods will be scheduled, existing pods will be evicted from the node if they do not tolerate the taint
+
+Applying toleration on a pod:
+spec:
+    containers:
+        xxxx
+    tolerations:
+    - key: "app"                 -> same as taint
+      operator: "Equal"
+      value: "blue"
+      effect:  "NoSchedule"
+
+Taints and tolerations tells the node to accept a pod with certain toleration, not the other way round(meaning that this pod should go
+to this particular node)
+If you want to specify certain pod should go to certain node, it's achieved via "Node Affinity"
+
+Scheduler never schedules a pod on the master node. Why?
+When a kubernetes cluster is setup, a default taint is set on the master node
+kubectl describe node kubemaster | grep Taint
+
+--------------
+Node Selectors
+--------------
+Configure which pods go to which nodes. Node Affinity also does the same
+spec:
+    containers:
+        - name: xxx
+          image: xxx
+        nodeSelector:
+            size: Large  -> These are labels assigned to the node. Scheduler uses this
+                            Label should exist before assigning pod to node.
+
+Limitation -> cannot have multiple conditions such as AND, OR etc.
+
+-------------
+Node Affinity
+-------------
+Configure which pods go to which nodes
+Provides advanced capabilities
+
+spec:
+    containers:
+        - name: xxx
+          image: xxx
+    affinity:
+        nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                    - matchExpressions:
+                        - key: size
+                          operator: In
+                          values:
+                            - Large
+                            - Medium
+
+operator -> In, NotIn, Exists - Simply checks if something exists. No "values" required
+What if someone changes the node labels, or there is no label matching the node selector? 
+    What happens to the existing pods on the node?
+
+Scheduling -> Before creating the pod and assigning it
+Executing -> Pod is already running and changes are made to the pod such as updating labels etc.
+
+requiredDuringSchedulingIgnoredDuringExecution -> 
+If a matching node does not exist, pod will never be scheduled
+preferredDuringSchedulingIgnoredDuringExecution -> 
+If no matching nodes are found, ignore affinity rules and scheduler will assign it to a random node
+
+Planned:
+requiredDuringSchedulingRequiredDuringExecution
+
+Two states of a pod:
+                                                    DuringScheduling      DuringExecution
+requiredDuringSchedulingIgnoredDuringExecution          Required             Ignored              -> This means that the running pod will not be affected
+preferredDuringSchedulingIgnoredDuringExecution         Preffered            Ignored                  and node affinity changes will be ignored
+requiredDuringSchedulingRequiredDuringExecution         Required             Required             -> Pods will be evicted if not matching affinity rules
+
+--------------------------------------
+Taint and Tolerations vs Node Affinity
+--------------------------------------
+
+If we have a scenario such as below:
+There are 3 nodes - Red, Blue, Green
+We want our pods only to run on these 3 nodes.
+Moreover, no other pods should be scheduled on our nodes.
+
+Taints and tolerations does not guaratee that the pod will be scheduled on a tainted node.
+It can be scheduled on a node with no taint
+
+If we go for Node Affinity, other pods might end up on our Node, if the nodes are shared.
+
+Hence we have to do both Taint & Tolerations as well as Node Affinity
+
+-----------------------
+Multiple container pods
+-----------------------
+Sometimes need 2 services to work together
+Created and destroyed together
+No volume sharing
+containers section is an array
+
+Patterns for multiple pods:
+Ambassador -> If for e.g you have separate DB instances in each env. The app service simply refers to the DB as "DB". The logic of switching to the correct DB
+              will be handled by another serice/container in the same pod. Proxying request to the right DB.
+Adapter -> In case an intermediate processing is required. For e.g Logs coming from multiple apps need to be formatted before sending to the log location
+Sidecar -> A service(for e.g, webserver) needs a logging agent
+

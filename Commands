@@ -94,6 +94,9 @@ kubectl describe pod myapp-pod
 
 kubectl delete pods --all
 
+Running a command in a specific pod:
+kubectl exec -it ubuntu-sleeper -- date -s '19 APR 2012 11:14:00'
+
 A Note on Editing Existing Pods ->
 In any of the practical quizzes if you are asked to edit an existing POD, please note the following:
 If you are given a pod definition file, edit that file and use it to create a new pod.
@@ -104,6 +107,25 @@ kubectl get pod <pod-name> -o yaml > pod-definition.yaml
 Then edit the file to make the necessary changes, delete and re-create the pod.
 
 Use the kubectl edit pod <pod-name> command to edit pod properties.
+
+Remember, you CANNOT edit specifications of an existing POD other than the below.
+
+spec.containers[*].image
+spec.initContainers[*].image
+spec.activeDeadlineSeconds
+spec.tolerations
+
+Run the kubectl edit pod <pod name> command. This will open the pod specification in an editor (vi editor). Then edit the required properties. 
+When you try to save it, you will be denied. This is because you are attempting to edit a field on the pod that is not editable.
+A copy of the file with your changes is saved in a temporary location as shown above.
+
+You can then delete the existing pod by running the command:
+
+kubectl delete pod webapp
+
+Then create a new pod with your changes using the temporary file
+
+kubectl create -f /tmp/kubectl-edit-ccvrq.yaml
 
 -------------
 Replica Sets
@@ -135,6 +157,13 @@ kubectl get pods
 
 kubectl get all
 
+Edit Deployments
+With Deployments you can easily edit any field/property of the POD template. 
+Since the pod template is a child of the deployment specification, with every change the deployment will automatically delete and create a new pod 
+with the new changes. So if you are asked to edit a property of a POD part of a deployment you may do that simply by running the command
+
+kubectl edit deployment my-deployment
+
 ----------
 Namespaces
 ----------
@@ -159,6 +188,144 @@ OR:
 metadata:
     name: xxx
     namespace: dev -> This will always create the deployment in the "dev" namespace
+
+
+-----------
+Config Maps
+-----------
+
+kubectl create configmap \
+    app-config --from-literal=APP_COLOR=blue
+               --from-literal=APP_MOD=prod
+
+OR 
+
+kubectl create configmap \
+    app-config --from-file=app_config.properties
+
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: app-config
+data:
+    APP_COLOR=blue
+    APP_MOD=prod
+
+kubectl get configmaps
+kubectl describe configmaps
+
+How to use it in a pod:
+
+All environment variables:
+
+spec:
+    containers:
+        - name: xx
+          envFrom:
+            - configMapRef:
+                name: app-config
+
+Selective environment variables:
+
+spec:
+    containers:
+        - name: xx
+          envFrom:
+            - configMapRef:
+                name: app-config
+                key: APP_COLOR
+
+
+-------
+Secrets
+-------
+
+kubectl create secret generic \
+    secret-name --from-literal=APP_COLOR=blue               
+
+OR 
+
+kubectl create secret generic \
+    secret-name --from-file=app_secret.properties
+
+
+apiVersion: v1
+kind: Secret
+metadata:
+    name: app-secret
+data:
+    DB_Host: bXlzcWw=     -> This needs to be in an encoded format
+
+echo -n 'mysql' | base64 -> bXlzcWw=
+
+kubectl get secrets
+kubectl describe secrets -> Only shows names and hides values
+kubectl get secret app-secret -o yaml -> Shows the value as well
+
+echo -n 'mysql' | base64 -- decode -> Decode secret value
+
+
+How to use it in a pod:
+
+All environment variables:
+
+spec:
+    containers:
+        - name: xx
+          envFrom:
+            - secretRef:
+                name: app-secret
+
+Selective environment variables:
+
+spec:
+    containers:
+        - name: xx
+          envFrom:
+            - secretRef:
+                name: app-secret
+                key: DB_PASSWORD
+
+Inject whole secret as a volume:
+
+volumes:
+- name: app-secret-volume
+  secret:
+    secretName: app-secret
+
+This creates file for each secret inside the volume
+
+---------------
+Service Account
+---------------
+
+kubectl create serviceaccount dashboard-sa
+
+kuebctl get serviceaccount
+
+kubectl describe serviceaccount dashboard-sa
+
+To view the secret 
+kubectl describe secret dashboard-sa-token-kbbdm
+
+To view the default secret mounted in the pod:
+kubectl exec -it my-kubernetes-dashboard ls /var/run/secrets/kubernetes.io/serviceaccount
+output is 3 files -> ca.crt, namespace, token
+
+----------------------
+Taints and Tolerations
+----------------------
+Apply taint on a node:
+kubectl taint nodes node-name key=value:taint-effect
+    taint-effect specifies what happens to pod that DO NOT TOLERATE this taint?
+    NoSchedule, PreferNoSchedule, NoExecute
+kubectl taint nodes node1 app=blue:NoSchedule
+
+-----------
+Label Nodes
+-----------
+kubectl label nodes <node-name> <label-key>=<label-value>
 
 ------------
 Cluster info
