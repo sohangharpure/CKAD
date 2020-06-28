@@ -473,3 +473,712 @@ Ambassador -> If for e.g you have separate DB instances in each env. The app ser
 Adapter -> In case an intermediate processing is required. For e.g Logs coming from multiple apps need to be formatted before sending to the log location
 Sidecar -> A service(for e.g, webserver) needs a logging agent
 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+Observability in Kubernetes
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+----------------
+Readiness Probes
+----------------
+
+Pod has Pod Status and Pod conditions
+Pod status tells us where the Pod is in the lifecycle
+
+Pending -> scheduler tries to schedule
+Container Creating -> All images are pulled
+Running
+
+Conditions complement Pod Status, it's an array of true or false
+PodScheduled
+Initialized
+ContainersReady
+Ready
+
+kubectl describe pods command, look for conditions section
+
+"Ready" conditions -> Application is ready and willing to accept user traffic
+The pod status may show ready, but how does kubernetes know if the container is really running or not?
+By default, as soon as container is created, pod is ready to serve traffic and pod is set to ready state
+"Ready" condition should be tied to application ready
+
+Different ways : http, tcp, command
+
+spec:
+    containers:
+    - name: xx
+      image: xx
+      readinessProbe:
+        httpGet:
+            path: /api/ready
+            port: 8080
+        tcpSocket:
+            port: 3306
+        exec:
+            command:
+                - cat
+                - /app/is_ready
+        initialDelaySeconds: 10 -> We know app will be ready after 10 seconds
+        periodSeconds: 5 -> Frequency of probing
+        failureThreshold: 8 -> By default, kubernetes will check 3 times for success/failure
+
+---------------
+Liveness Probes
+---------------
+If the application start up but after some time goes in an application error(such as infinite loop)
+Kubernetes by default may still route traffic to the app thinking it's still up.
+As a developer, you can define when an application is healthy
+For a web app, when the api server is up and running etc.
+
+Liveness probe will check periodically if the pod is still working as expected
+If not, it may try to restart it or kill it and bring up a new one
+
+    livenessProbe:
+        httpGet:
+            path: /api/ready
+            port: 8080
+        tcpSocket:
+            port: 3306
+        exec:
+            command:
+                - cat
+                - /app/is_ready
+        initialDelaySeconds: 10 -> We know app will be ready after 10 seconds
+        periodSeconds: 5 -> Frequency of probing
+        failureThreshold: 8 -> By default, kubernetes will check 3 times for success/failure
+
+-------
+Logging
+-------
+If a docker conatainer is running in detatchd mode, we cannot see the logs on the console:
+
+docker run -d kodekcloud/event-simulator
+
+We can view logs by -f option
+
+Kubernetes - can view the logs using:
+kubectl logs -f event-simulator-pod 
+
+Specific to container running in pod
+
+If there are multiple containers within the pod, you have to specify the container specifically
+kubectl logs -f event-simulator-pod event-simulator
+
+------------------
+Monitor Kubernetes
+------------------
+Node and pod level metrics
+
+Metrics Server
+1 metrics server per kubernetes cluster. In-memory monitoring solution
+Cannot see historical data
+
+kubelet contains cAdvisor -> collects metrics and makes avaialable via api
+
+kubectl top node
+kubectl top pod
+
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+POD Design
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+----------------------------------
+Labels, Selector and Annotatotions
+----------------------------------
+
+Labels and selectors are used to group things together
+
+Labels - allow you to group things
+Selector - allow you to filter based on criteria
+
+metadata:
+    name: simple-webapp
+    labels:
+        app: App1
+        function: Front-end
+
+To filter pods
+kubectl get pods --selector app=App1
+
+In replica set, we use selectors to group the pods with matchLabels
+The label in matchLabels must match the label on the pod
+
+Annotatotions - 
+Used for certain important information
+metadata:
+    name: simple-webapp
+    labels:
+        app: App1
+        function: Front-end
+    annotations:
+        buildVersion: 1.34
+
+------------------------------------
+Updates and Rollbacks in deployments
+------------------------------------
+Whenever a new deployment is created, it creates a new rollout, which then creates a new deployment revision
+Revision enables us to do Rollbacks
+
+kubectl rollout status deployment/myapp-deployment
+
+kubectl rollout history deployment/myapp-deployment
+
+Two types of deployment strategies:
+Recreate Strategy: During rollout, all old objects are destroyed(all at once) and new objects are created. This cause availabilty issues.
+Rolling update: During rollout, old ones are deleted and new ones are created one by one. Default strategy
+
+Modify existing deployment definition and then to apply changes:
+kubectl apply -f deploy-def.yml
+OR
+kubectl set image deploymennt/app-deployment image=xxx
+
+kubectl describe deployment
+
+Deployment creates new replica sets and brings up/down pods in old and new
+
+If we want to rollback the deployment:
+kubectl rollout undo deployment/myapp-deployment
+
+kubectl run nginx --image=nginx
+This actually creates a deployment
+
+----
+Jobs
+----
+Batch processing - meant to be short-running
+If you create a pod with a short-running process, the pod completes but then is restarted by Kubernetes again
+This is because the restart policy is set to Always by default
+
+spec:
+    containers:
+    - name: math-add
+      image: ubuntu
+      command: ['expr','3','+','2']
+    restartPolicy: Always
+
+restartPolicy - Always, Never, OnFailure
+
+Never - runs fine for short running
+
+However we sometime require processing on large data sets with multiple pods
+We need a manager to create as many pods as we want
+ReplicaSet - make sure x no. of pods are running
+Jobs - make sure a set of pods are created and run to completion
+
+Similar to ReplicaSet
+
+apiVersion: batch/v1
+kind: Job
+metadata: 
+    name: math-add-Job
+spec:
+    completions: 3 -> Set no. of pods to 3
+    parallelism: 3 -> Creates 3 pods at once
+    backoffLimit: 25 # This is so that the job does not quit before it succeeds
+    template:
+        spec:
+            containers:
+                - name: math-add
+                  image: ubuntu
+                  command: ['expr','3','+','2']
+            restartPolicy: Never
+
+kubectl create -f xxx.yml
+kubectl get jobs -> Shows in a completed
+kubectl logs math-add-job-xx
+kubectl delete job xxx
+
+By default, a pod is created only after 1st one is finished
+What if a pod randomy fails?
+Job tries to create a pod until it has "x" successful completions as specified in the "completions" tag
+
+Cron Jobs:
+---------
+Job which can be scheduled
+
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata: 
+    name: math-add-cron-job
+spec:   -> Spec for cron
+    schedule: "*/1 * * * *"
+    completions: 3 -> Set no. of pods to 3
+    parallelism: 3 -> Creates 3 pods at once
+    jobTemplate:
+       spec:    -> One for job
+        completions: 3 -> Set no. of pods to 3
+        parallelism: 3 -> Creates 3 pods at once
+        template:
+            spec:   -> One for pod
+                containers:
+                    - name: math-add
+                    image: ubuntu
+                    command: ['expr','3','+','2']
+                restartPolicy: Never
+
+kubectl create -f xxx.yml
+kubectl get cronjob -> Shows in a completed
+
+
+--------
+Services
+--------
+Internal and external communication with the user or other pods
+
+For a pod : there is an internal IP address
+How do you communicate externally with the pod? 
+
+You can do curl http://10.244.0.2 -> This is the pod internal IP address
+But this is only when you login to the node
+As a user, i want direct access to the application without having to SSH into the node
+
+Map user request via the node to the pod
+Listen to a port on the node -> Forward the request to the app port on the pod
+
+Node port service : Listen to port on the node, map to pod
+Cluster IP: Creates a virtual IP within the node
+Load Balancer: Provisions a load balancer with an external cloud provider
+
+Node Port:
+----------
+3 ports involved:
+    - Target Port : port on the pod
+    - Port: Port on the service itself
+        Cluster IP: IP address of the service object
+    - Node Port: Accessible by user, range between 30000 - 32767
+            -------------------------------------------------------
+            |
+            |               Cluster IP: 
+            |               10.106.1.12
+            |               ----------               --------------
+          Node Port         |  Port  |               | Target Port|
+User------>300008---------> |   80   | --------------|-->   80    |
+            |                ---------                -------------
+            |               Service Object              Pod
+            |
+        Kubernetes Node----------------------------------------------
+
+apiVersion: v1
+kind: Service
+metadata:
+    name: myapp-service
+spec:
+    type: NodePort
+    ports:
+        - targetPort: 80    -> If not provided, assumed to be the same as port. Actual pod port
+          port: 80      -> This is the only mandatory field. The actual service port      
+          nodePort: 30008  -> If not provided, any random is assinged within the range
+    selector:           -> This actually links the service to the pod. Without it, it's useless
+        app: myapp         The values here are the same which are specified on the pod
+        type: front-end    
+
+kubectl create -f xxx
+kubect get services
+
+If there are multiple pods, the service will route the traffic to all the pods based on the selector
+Follows a random algoritm
+Can apply seesion affinity
+Handles pods on different nodes, same nodes etc.
+Balance traffic between different services on different *nodes* in the cluster
+    - All services are exposed on the same NodePort
+Pods are removed or added -> Service would handle it.
+
+Cluster IP:
+-----------
+Default for any service
+Group pods using service
+Useful for Microservices where each layer needs to communicate with other layer
+So you can have webservice, redis-service etc.
+Is not exposed to the outside world
+
+apiVersion: v1
+kind: Service
+metadata:
+    name: backend
+spec:
+    type: ClusterIP   
+    ports:
+        - targetPort: 80  -> If not provided, assumed to be the same as port. Actual pod port
+          port: 80      -> This is the only mandatory field. The actual service port      
+    selector:           -> This actually links the service to the pod. Without it, it's useless
+        app: myapp         The values here are the same which are specified on the pod
+        type: front-end    
+
+----------------
+Network policies
+----------------
+Ingress(incoming) and Egress(outgoing) rules
+
+Kubernetes by default has an "All Allow" policy which allows a pod to communicate with any other internal objects
+
+Network policy can only be applied to a pod
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+    name: db-policy
+spec:
+    podSelector:
+        matchLabels:
+            role:db -> Apply network policy to the db pod
+    policyTypes:
+    - Ingress
+    ingress:
+        - from:
+            - podSelector:
+                matchLabels:
+                    name: api-pod   -> Only allow incoming traffic from the api-pod and no other pods
+          ports:
+          - protocol: TCP
+            port: 3306
+
+The above policy makes sure that the traffic to the db pod is coming in from the api pod. It rejects any other incoming traffic
+
+N/W polcies are imposed by network solutions in kubernetes. Only a few support network policies.
+Flannel doesn't support n/w policies.
+
+------------------
+Ingress Networking
+------------------
+Ingress allows you to configure a single URL for a application which you can configure to route internally to multiple services
+(As opposed to exposing multiple load balancers for each service and then having a global load balancer)
+Also can configure HTTPs 
+Think of it as a Layer7 loadbalancer
+You still need to expose it to the outside world, hence publish it as a NodePort or as a Load balancer
+
+Consists of two parts:
+Ingress Controller - a pre-built solution such as Nginx, HAProxy, Traefik
+Ingress Resources - For configuring the controller
+
+Kubernetes cluster by default doesn't come with Ingress Controller
+So even if you have resources defined, they won't work
+
+Ingress Controller:
+-------------------
+Nginx and GCP HTTPs are supported
+They are deployed as pods in kubernetes
+
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata: 
+    name: nginx-ingress-controller
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            name: nginx-ingress
+    template:
+        metadata:
+            labels:
+                name: nginx-ingress
+        spec:
+            containers:
+                - name: nginx-ingress-controller
+                  image: xxx
+            args:
+                - /nginx-ingress-controller
+        env:                    -> These are required
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                    fieldPath: metadata.name
+            - name: POD_NAMESPACE
+                valueFrom:  
+                    fieldRef:
+                        fieldPath: metadata.namespace
+        ports:
+            - name: http
+              containerPort: 80
+            - name: https:
+              containerPort: 443
+
+  You also need to setup:
+  a. A nodeport service to expose the ingress controller to the outside world
+  b. A ConfigMap to pass configuration to the controller required for things such as http(s), SSL etc.
+  c. A serviceaccount so that the ingress controller can access all the internal objects within the cluster
+
+
+Ingress Resource
+----------------
+Routing rules
+
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+    name: ingress-Whatever
+spec:
+    backend:
+        serviceName: wear-service
+        servicePort: 80
+
+kubectl create -f xx
+
+kubectl get ingress
+
+kubectl describe ingress ingress-wear-watch
+
+Ingress rule - applies to top level domain name
+------------------------------------------------
+
+Below rule routes traffic as below:
+www.my-online-store.com
+    - /wear  -> Should route to wear service
+    - /watch -> Should route to watch service
+
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+    name: ingress-wear
+spec:
+    rules:
+    - http:
+        paths:
+            - path: /wear
+              backend:
+                serviceName: wear-service
+                servicePort: 80
+            - path: /watch
+              backend:
+                serviceName: watch-service
+                servicePort: 80
+
+
+For each top level domain name(rule), you can have different paths where the traffic might be routed to.
+For e.g:
+www.my-online-store.com
+    - /wear
+    - /watch
+www.wear.my-online-store.com
+    - /
+    - /returns
+    - /support
+
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+    name: ingress-wear
+spec:
+    rules:
+    - host: my-online-store.com
+      http:
+        paths:
+            - backend:
+                serviceName: wear-service
+                servicePort: 80
+            - path: /watch
+              backend:
+                serviceName: watch-service
+                servicePort: 80
+     - host: watch.my-online-store.com
+       http:
+        paths:
+            - backend:
+                serviceName: watch-service
+                servicePort: 80
+            - path: /returns
+              backend:
+                serviceName: returns-service
+                servicePort: 80
+            - path: /support
+              backend:
+                serviceName: support-service
+                servicePort: 80
+
+If you don't specify any host, it applies to all traffic coming from the ingress
+
+Rewrite target option:
+https://kubernetes.github.io/ingress-nginx/examples/rewrite/
+
+When user visits the URL on the left, his request should be forwarded internally to the URL on the right. 
+Note that the /watch and /wear URL path are what we configure on the ingress controller so we can forwarded users to the appropriate application in the backend. 
+The applications don't have this URL/Path configured on them
+http://<ingress-service>:<ingress-port>/watch --> http://<watch-service>:<port>/
+
+Without the rewrite-target option, this is what would happen:
+http://<ingress-service>:<ingress-port>/watch --> http://<watch-service>:<port>/watch
+
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: test-ingress
+  namespace: critical-space
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /pay
+        backend:
+          serviceName: pay-service
+          servicePort: 8282
+
+
+---------------------
+Storage in Kubernetes
+---------------------
+
+Storage in Docker
+2 Types: Storage drivers and volume drivers
+
+Storage drivers
+---------------
+Help manage storage on images and containers
+
+How docker stores data in File system
+/var/lib/docker
+    - aufs
+    - containers
+    - image
+    - volumes
+
+Docker layered architecture
+Each instruction in dockerfile creates an image with just the changes from the previous layer
+
+If there are 2 docker files with the same instructions except just the app code, docker will reuse all the rest of the layers
+so as to save disk space
+
+docker build -> Creates Read-only image layers
+docker run -> Creates a writable container layer based on the image layer to store files generated by the container
+
+Same image layer is shared by multiple containers
+Life of container layer is ephemeral
+
+COPY-ON-WRITE: if we want to modify a file in the image layer, docker will create a copy in the container layer so that we can edit it
+All changes will be done on this local copy
+
+What if we want to persist the container layer
+Create a volume
+
+Volume mounting
+---------------
+docker volume create data_volume
+docker run -v data_volume:/var/lib/mysql mysql
+
+docker run -v data_volume2:/var/lib/mysql mysql -> Docker will automatically create volume if it doesn't exist
+
+Bind mounting
+-------------
+What if we have data at another location?
+We can bind volume at any location to the container
+docker run -v /data/mysql:/var/lib/mysql mysql
+
+-v is deprecated , --mount-type
+docker run --mount-type=bind, source=/data/mysql, target=/var/lib/mysql mysql
+
+Who is responsible for creating layers, mounting volumes etc in docker? 
+Storage drivers
+Docker will choose driver based on OS -- Device Mapper, Overlay etc.
+
+Volume drivers
+--------------
+If we want to persist storage, we create volumes - handled by volume drivers
+
+Volume driver plugins - default is local
+Convoy, gce-docker, RexRay etc.
+
+docker run -it \ --volume-driver rexray/ebs
+
+Volumes in Kubernetes
+---------------------
+Docker containers are meant to be transient, and we use volumes to persist data
+Similarly, kubernetes pods are ephemeral and we need volumes to persist data
+
+spec:
+    containers:
+        - image:xx
+          xxx
+          volumeMounts:
+          - mountPath: /opt     -> Mount it on a pod and use as /opt in the pod
+            name: data-volume
+
+volumes
+- name: data-volume
+  hostPath:
+    path: /data         -> Use /data directory on node as a volume
+    type: Directory
+
+Volume types: 
+The above will not work in a multi-node environment
+Different providers: CEPH, NFS, AWS, Google Cloud etc.
+
+For e.g for AWS EBS:
+volumes
+- name: data-volume
+  awsElasticBlockStore:
+   volumeID: <volume-id>
+   fsType: ext4
+
+Persistent Volumes (admin creates)
+------------------
+In the previous section, users will need to change all pod definitions since it's directly in the pod
+We would like to manage storage more centrally
+
+Persistent volumes
+Users can claim them using Persistent volume claims
+
+apiVersion:v1
+kind: PersistentVolume
+metadata:
+    name: pv-vol1
+spec:
+    accessModes:
+        - ReadWriteOnce     -> ReadOnlyMany, ReadWriteOnce, ReadWriteMany
+    capacity:
+        storage: 1Gi
+    hostPath:           -> Volume types, can be AWS, Node etc
+        path: /tmp/data
+
+kubectl create -f xxxl
+kubectl get persistentvolume
+
+Persistent Volume Claims (user creates)
+------------------------
+Make storage avaialble to a node
+A PVC Claim is bound to a single Persistent Volume
+If there are multiple matches to a single claim, you can still use labels and selectors to bind the correct PV
+If there are no PV's avaialable, PVC will remain in a pending state unless all the criteria's are satisfied and new volumes are avaialable
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+    name: myclaim
+spec:
+    accessModes:
+        - ReadWriteOnce
+    resources:
+        requests:
+            storage:
+                500Mi
+
+When above claim is created, kubernetes looks at the access modes and storage requested. Since pv-vol1 is available it's bound(even if total storage is greater)
+
+kubectl create -f xxx
+kubectl get persistentvolumeclaim
+kubectl delete persistentvolumeclaim myclaim
+
+What happens to volume when claim is deleted? 
+By default the volume is set to retain
+persistentVolumeReclaimPolicy: Retain or Delete(pvc delete, volume deleted) or Recycle(data in data volume will be scrubbed before making avaialable)
+
+How to use in a POD:
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mypod
+spec:
+  containers:
+    - name: myfrontend
+      image: nginx
+      volumeMounts:
+      - mountPath: "/var/www/html"
+        name: mypd
+  volumes:
+    - name: mypd
+      persistentVolumeClaim:
+        claimName: myclaim
+
+Mount an existing file present on node - node01 - asked in ckad
+
+If PVC is being used in a POD and we delete the PVC directly, it's stuck in a terminating phase
+Once POD is deleted the PVC is deleted and the PV is in a released state(in case of default)

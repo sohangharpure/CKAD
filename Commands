@@ -97,6 +97,9 @@ kubectl delete pods --all
 Running a command in a specific pod:
 kubectl exec -it ubuntu-sleeper -- date -s '19 APR 2012 11:14:00'
 
+To filter pods based on labels
+kubectl get pods --selector app=App1
+
 A Note on Editing Existing Pods ->
 In any of the practical quizzes if you are asked to edit an existing POD, please note the following:
 If you are given a pod definition file, edit that file and use it to create a new pod.
@@ -149,7 +152,21 @@ Deployments
 -----------
 kubectl create -f deployment-definition.yml
 
-kubectl get Deployments
+kubectl get deployments
+
+kubectl edit deployment webapp
+
+kubectl apply -f deployment-definition.yml --> To change existing deployment
+OR
+kubectl set image deployment/my-deployment mycontainer=myimage
+kubectl set image deployment nginx nginx=nginx:1.17 --record -> Save the command used to create/update a deployment against a revision
+
+kubectl rollout status deployment/myapp-deployment
+
+kubectl rollout history deployment/myapp-deployment
+kubectl rollout history deployment/myapp-deployment --revision=1
+
+kubectl rollout undo deployment/myapp-deployment
 
 kubectl get replicaset
 
@@ -235,7 +252,6 @@ spec:
             - configMapRef:
                 name: app-config
                 key: APP_COLOR
-
 
 -------
 Secrets
@@ -326,6 +342,28 @@ kubectl taint nodes node1 app=blue:NoSchedule
 Label Nodes
 -----------
 kubectl label nodes <node-name> <label-key>=<label-value>
+
+-------
+Logging
+-------
+kubectl logs -f event-simulator-pod
+
+---------
+Selectors
+---------
+Multiple criterias:
+kubectl get all --selector env=prod,bu=finance,tier=frontend
+
+----------------
+Jobs and CronJob
+----------------
+kubectl create -f xxx.yml
+kubectl get jobs -> Shows in a completed
+kubectl logs math-add-job-xx
+kubectl delete job xxx
+
+kubectl create -f xxx.yml
+kubectl get cronjob -> Shows in a completed
 
 ------------
 Cluster info

@@ -1,0 +1,320 @@
+Command to start a pod
+kubectl run nginx --image=nginx --restart=Never
+
+Command to change image of a pod
+kubectl set image pod/nginx nginx=nginx:1.7.1
+
+Sequence to ping a pod from busybox
+kubectl run busybox --image=busybox --restart=Never --rm -it -- sh
+# / wget -O- <pod_ip>:80
+#/ exit
+
+Output nice yaml from a resource
+kubectl get pod nginx -o yaml --export
+
+Get logs of a previous version of a pod
+kubectl logs nginx -p
+
+Attach a process to a running pod
+kubectl exec -it nginx -- /bin/sh
+
+Set an environment variable from command line
+kubectl run nginx --image=nginx --env=var1=val1
+
+Multi-container pod
+kubectl run busybox --image=busybox -o yaml --dry-run -- /bin/sh -c 'echo hello;' > pod.yaml
+# vi pod.yaml, Copy + Paste container list and rename the container
+kubectl create -f pod.yaml
+kubectl exec -it busybox -c busybox2 -- /bin/bash # Connect to second container
+
+Create a pod with labels
+kubectl run --image... --restart=Never --labels=app=v1,label2=val2
+
+Show labels on pods / resource
+kubectl get pods --show-labels
+
+Label a running pod
+kubectl label po nginx app=v2 --overwrite
+
+Get all pods with a certain label
+kubectl get po -lapp
+
+Remove a label from a running pod
+kubectl label nginx{1..3} app-
+
+Get documentation for a pod spec
+kubectl explain po.spec
+
+Annotate a running pod
+kubectl annotate po nginx description='test description'
+kubectl annotate po nginx description- # Remove
+
+Create pod with 2 replicas and open port 80 from yaml
+kubectl create deploy nginx --image=... --dry-run -oyaml > deploy.yaml
+vi deploy.yaml
+# Change replicas: 2
+# Under containers list add following
+ports:
+- containerPort: 80
+
+kubectl create -f deploy.yaml
+
+Check status and history of a deployment
+kubectl rollout status deploy nginx
+kubectl rollout history deploy nginx
+
+Up replicas of a deployment to 5
+kubectl scale deploy nginx --replicas=5
+
+Install a horizontal pod autoscaler on a deployment
+kubectl autoscale deploy nginx --min=5 --max=10 --cpu-percent=80
+
+Temporarily disable+enable future updates to a deployment
+kubectl rollout pause deploy nginx
+kubectl rollout resume deploy nginx
+
+Get history of of a deployment
+kubectl rollout history deploy nginx --revision=6
+
+Start a "job" pod
+kubectl run pi --image=perl --restart=OnFailure -- perl ...
+
+Monitor running jobs
+kubectl get jobs -w
+
+Get the logs of a job/pod (and monitor as it runs)
+kubectl logs perl-*** -f
+
+Remove a job from history/cluster
+kubectl delete job pi
+
+Get logs after the pod/job completes
+kubectl logs job/pi
+
+Job yaml to run concurrently or multiple times
+job.spec.completions=5
+job.spec.parallelism=5
+
+Command to run a cronjob (view it afterwards)
+kubectl run pi --image=perl --restart=OnFailure --schedule="*/1 (four asterisk)"
+kubectl get cj
+
+Create confg map command
+kubectl create cm myconf --from-literal=foo=lala --from-literal=foo2=lolo
+
+Config map from file or env file
+echo -e "foo3=lili\nfoo4=lele" > config.txt
+echo -e "var1=val1\n\n#comment\n\nvar2=test" > config.env
+
+--from-file=config.txt
+--from-env-file=config.env
+--from-file=special=config.txt # Name the map items in config map
+
+Add config map item or secret to a pod environment
+# Under container spec list
+env:
+- name: option # name of env var
+valueFrom:
+configMapKeyRef: # secretKeyRef
+name: options # cm / secret name
+key: var5 # key of data
+....
+kubectl exec -it nginx -- env | grep option
+
+Add entire config map to a pod
+# Under container spec list
+envFrom:
+- configMapRef:
+name: anothermap
+
+Mount a config map or secret as a volume in pod
+# Under pod spec
+spec:
+volumes:
+- name: myvol
+configMap: #or secret:
+name: cmvolume #name of cm or secretName:
+containers:
+- image ....
+....
+volumeMounts:
+- name: myvol
+mountPath: /etc/lala
+
+$ / kubectl exec -it nginx -- /bin/sh -c "ls /etc/lala"
+
+Add a security context to a pod to run as a specific user id
+# under pod.spec
+spec:
+securityContext:
+runAsUser: 101
+
+Security context to add/drop capabilities from a container
+# under pod.spec.containers[ ]
+containers:
+- image: ...
+...
+securityContext:
+capabilities:
+add: ["NET_ADMIN", "SYS_TIME"]
+
+Set resource limits on a pod
+# On "run" command
+--requests='cpu=100,memory=256Mi'
+--limits='cpu=200m,memory=512Mi'
+
+Command to create a secret
+kubectl create secret generic mysecret --from-literal=username=password
+# --from-file=...
+
+Decode a secret
+base64 -d [secret]
+# secrets are all b64 encoded before storage
+
+Command to view all service accounts
+kubectl get sa --all-namespaces
+
+Yaml to use a service account on a pod
+# in pod.spec.serviceAccountName
+spec:
+serviceAccountName: myuser
+containers: ...
+
+Add liveness probe to a container (delay 5 seconds, repeat every 10 seconds, run ls command)
+kubectl explain pod.spec.containers.livenessProbe
+
+livenessProbe:
+initialDelaySeconds: 5
+periodSeconds: 10
+exec:
+command:
+- ls
+
+Add readiness probe to default endpoint
+kubectl explain pod.spec.containers.readinessProbe
+
+readinessProbe:
+httpGet:
+path: /
+port: 80
+
+Two most important busybox commands
+/bin/sh (shell)
+wget -O-
+
+Find an error and force delete that pod
+kubectl get events | grep -i error
+kubectl delete pod busybox --force --grace-period=0
+
+Check cpu/memory utilization of nodes or pods
+# Heapster installation required
+kubectl top nodes
+kubectl top pods
+
+Create a nginx pod with a service backing it
+kubectl run nginx --image=nginx --restart=Never --port=80 --expose
+kubectl get svc nginx
+kubectl get endpoints
+
+# --expose is the required flag to create the service
+
+Expose a service through the node
+kubectl edit svc nginx
+# change "ClusterIP" to "NodePort" under "type"
+kubectl get svc
+# Look for the 3xxxx port under "PORT(s)" column
+# Get node IP pod is running on (kubectl get po -o wide)
+# You can then curl/wget that nodeip:nodeport
+
+Create a service for an existing deployment
+kubectl expose deploy foo --port=6262 --target-port=8080
+kubectl run --image=busybox --restart=Never --rm -it -- sh
+#/ wget -O- foo:6262
+#/wget -O- SERVICE_IP:6262
+
+Create a yaml network policy that only allows pods with label "access=true" access
+kind: NetworkPolicy
+apiVersion: (kubectl explain NetworkPolicy)
+metadata:
+name: ..
+spec:
+podSelector:
+matchLabels:
+run: nginx . # np applies to these pods only
+ingress:
+- from:
+- podSelector
+matchLabels:
+access: 'true' . # quotes required
+
+Run a busybox with / without --labels=access=true and try to wget http://nginx:80 to see the effect
+
+Attach an empty directory to a multi-container pod
+# pod.spec
+volumes:
+- name: myvol
+emptyDir: {}
+
+# BOTH pod.spec.containers[ ]
+volumeMounts:
+- name: myvol
+mountPath: /etc/foo
+
+# Both containers can now access the same /etc/foo directory and read/write
+
+> mount | grep foo #confirm mounting
+
+Copy from a pod filesystem to local
+kubectl cp busybox:/etc/passwd .
+
+Yaml to create a persistent volume
+kind: PersistentVolume
+apiVersion: v1
+metadata:
+name: myvolume
+spec:
+storageClassName: normal
+capacity:
+storage: 10Gi
+accessModes:
+- ReadWriteOnce
+- ReadWriteMany
+hostPath:
+path: /etc/foo
+
+Yaml to create a persistent volume claim
+```
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+name: mypvc
+spec:
+storageClassName: normal
+accessModes:
+- ReadWriteOnce
+resources:
+requests:
+storage: 4Gi
+```
+
+Define a PVC in a pod spec
+# pod.spec
+volumes:
+- name: myvolume
+persistentVolumeClaim:
+claimName: mypvc
+
+vi command, delete from cursor to end of file
+dG
+
+vi command, quick save and exit
+ZZ
+
+Deployment updates strategy yaml
+# deployment.spec
+strategy:
+rollingUpdate:
+maxSurge: 25%
+maxUnavailable: 25%
+type: RollingUpdate
+
