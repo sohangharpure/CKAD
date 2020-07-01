@@ -1182,3 +1182,85 @@ Mount an existing file present on node - node01 - asked in ckad
 
 If PVC is being used in a POD and we delete the PVC directly, it's stuck in a terminating phase
 Once POD is deleted the PVC is deleted and the PV is in a released state(in case of default)
+
+Topics not needed for CKAD
+--------------------------
+
+Storage classes:
+----------------
+Used if we want to automatically create volume when app requires it
+Define a provisioner: automatically create volume in let's say google cloud
+This is called dynamic provisioning
+PVC points to Storage class -> No need of manually creating a PV, created automatically by storage class
+Many other provisioners -> Azure, Flexer etc.
+
+Stateful Sets:
+--------------
+Single master, multi slave -> All writes come to master, then duplicated to slave
+If there are 2 slaves, 
+master -> slave1
+slave1 -> slave2
+
+Similar to deployment sets
+Pods are created in a sequential order
+Ensure master is initialized first
+Assign a unique original index to the first pod
+Each pod gets a unique name with the statetful set name + index name - you can be sure about the pod names
+
+Definition file - similar to deployment set, except the below:
+kind: StatefulSet
+Also requires a service name:
+serviceName: mysql-h    -> Headless service name
+
+When stateful set is deleted, or scaled down, the last pod is the first one to be brought down. You can set the "podManamgementPolicy" field to change this behavior
+
+Headless Services
+-----------------
+In case of a cluster(such as MySQL) where you have master and slave nodes, the reads can go to all the pods, but the writes should go to the master only
+How do you access only the master pod directly?
+One way is by the POD external IP address, but they can't be used since they are dynamic
+
+Headless Service:
+We need a service which does not load balance requests but gives a way to reach each pod
+Creates DNS service for each pod with the pod name.
+So when you create a headless service such as mysql-h, each pod will have a DNS entry such as below:
+podname.headless-servicename.namespace.svc.cluster-domain.example
+So in case of a master pod,
+mysql-0.mysql-h.default.svc.cluster.local -> This should always work
+
+apiVersion: v1
+kind: Service
+metadata:
+    name: mysql-h
+spec:
+    ports:
+        - port: 3306
+    selector:
+        app: mysql
+    ClusterIP: None -> This is what creates a headless service
+
+In the pod definition file, you must specify the below fields to create the automated hostname
+spec:
+ --
+ --
+ subdomain: mysql-h   -> Name of the headless service, but doesn't create a-name record
+ hostname: mysql-pod  -> Creates a DNS record
+
+If you include the above pod spec in a deployment specification, the pod's created will have the exact same hostname for all pod's
+This doesn't solve our purpose in case of a master-slave architecture
+
+This is how a stateful set differs from deployment in that it doesn't require the above 2 fields.
+It will automatically generate the correct hostname.
+
+However, how does the stateful set know which headless service it should point to?
+In that case, you must specify the serviceName explicitly in the StatefulSet defintion file
+spec:
+    serviceName: mysql-h
+
+Storage in StatefulSets
+-----------------------
+In deployments, if you specify the same volume using PVC, it's used by all the pods
+Note that not all volume types will support this kind of behavior
+What if we want different volumes/PVC's for different pods?(such as in case of a DB):
+We can achieve that using a VolumeClaimTemplate. This will automatically create PVC's for each pod using the template.
+When a pod is deleted in a stateful set, the PVC is not deleted but then reattached to the same pod once it comes up.
