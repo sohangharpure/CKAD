@@ -37,7 +37,7 @@ Label a running pod
 kubectl label po nginx app=v2 --overwrite
 
 Get all pods with a certain label
-kubectl get po -lapp
+kubectl get pod -l app
 
 Remove a label from a running pod
 kubectl label nginx{1..3} app-

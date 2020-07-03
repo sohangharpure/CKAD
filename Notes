@@ -66,14 +66,14 @@ Load balancing
 Replication Controller      | ReplicaSet
 -------------------------------------------------
 Older tech                  | New recommended way
-apiVersion: v1              | apiVersion: apps/v1   ->If wrong, you will get an error saying "no match for kind ReplicaSet"
+apiVersion: v1              | apiVersion: apps/v1   -> If wrong, you will get an error saying "no match for kind ReplicaSet"
 kind: ReplicationController | kind: ReplicaSet
 spec:                       | spec:
     - template:             |   - template:      
          {POD template}     |       {POD template}
     - replicas: 2           |   - replicas: 2
-                            |   - selector:                 -> This is because ReplicaSet's can also manage pods which are not created by itself
-                            |        matchLabels:              This field is mandatory and cannot be skipped
+                            |   - selector:             -> This is because ReplicaSet's can also manage pods which are not created by itself
+                            |        matchLabels:          This field is mandatory and cannot be skipped
                             |           type: frontEnd      
 
 Labels and Selectors:
@@ -122,7 +122,7 @@ spec:
 Commands, arguments in docker
 -----------------------------
 docker run ubuntu -> Runs and exits
-Containers only lives as long as process inside is alive
+Containers only live as long as process inside is alive
 
 docker run ubuntu [COMMAND] 
 
@@ -140,8 +140,8 @@ docker run ubuntu-sleeper 10
 FROM ubuntu
 ENTRYPOINT ["sleep"] -> This will get appended
 
-Difference between sleep and ENTRYPOINT:
-Sleep -> Whatever parameters you specify will replace the existing one
+Difference between CMD and ENTRYPOINT:
+CMD -> Whatever parameters you specify will replace the existing one
 ENTRYPOINT -> Whatever parameters you specify will get appended
 
 what if we want a default value if argument is not specified?
@@ -154,6 +154,24 @@ docker run ubuntu-sleeper -> sleep 5
 What if we want to specify a custom ENTRYPOINT:
 docker run --entrypoint sleep2.0 ubuntu-sleeper 10
 Command at startup: sleep2.0 10
+
+-----------------
+
+Description                         Docker field name Kubernetes field name 
+The command run by the container    Entrypoint        command 
+The arguments passed to the command Cmd               args
+
+When you override the default Entrypoint and Cmd, these rules apply:
+If you do not supply command or args for a Container, the defaults defined in the Docker image are used.
+If you supply a command but no args for a Container, only the supplied command is used. The default EntryPoint and the default Cmd defined in the Docker image are ignored.
+If you supply only args for a Container, the default Entrypoint defined in the Docker image is run with the args that you supplied.
+If you supply a command and args, the default Entrypoint and the default Cmd defined in the Docker image are ignored. Your command is run with your args.
+
+Image Entrypoint  Image Cmd     Container command   Container args  Command run 
+[/ep-1]           [foo bar]         <not set>       <not set>       [ep-1 foo bar]
+[/ep-1]           [foo bar]         [/ep-2]         <not set>       [ep-2]  
+[/ep-1]           [foo bar]         <not set>       [zoo boo]       [ep-1 zoo boo]  
+[/ep-1]           [foo bar]         [/ep-2]         [zoo boo]       [ep-2 zoo boo]
 
 ---------------------------------
 Commands, arguments in Kubernetes
@@ -188,8 +206,7 @@ spec:
 ----------
 Config Map
 ----------
-When there are a lot of environment variables and pod definitions, it becomes difficult to manage
-them. For this, we use config maps
+When there are a lot of environment variables and pod definitions, it becomes difficult to manage them. For this, we use config maps
 When you inject a variable from config map into a pod, they become available as environment variables
 
 There are 2 phases to config map:

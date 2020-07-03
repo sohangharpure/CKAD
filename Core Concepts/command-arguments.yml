@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ubuntu-sleeper-pod
+spec:
+  containers:
+    - name: ubuntu-sleeper
+      image: ubuntu-sleeper
+      command: ["sleep2.0"] #Equivalent to specifying ENTRYPOINT in containers, such as DOCKER
+      args: ["10"]          #Equivalent to CMD
